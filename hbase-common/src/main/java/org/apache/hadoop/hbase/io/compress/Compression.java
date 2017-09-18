@@ -47,7 +47,7 @@ import org.apache.hadoop.util.ReflectionUtils;
  */
 @InterfaceAudience.Private
 public final class Compression {
-  static final Log LOG = LogFactory.getLog(Compression.class);
+  private static final Log LOG = LogFactory.getLog(Compression.class);
 
   /**
    * Prevent the instantiation of class.
@@ -235,9 +235,36 @@ public final class Compression {
           throw new RuntimeException(e);
         }
       }
-  };
+  },
+    CSSZLIB("csszlib") {
+      // Use base type to avoid compile-time dependencies.
+      private volatile transient CompressionCodec cssZlibCodec;
+      private transient Object lock = new Object();
 
-    private final Configuration conf;
+      @Override
+      CompressionCodec getCodec(Configuration conf) {
+        if (cssZlibCodec == null) {
+          synchronized (lock) {
+            if (cssZlibCodec == null) {
+              cssZlibCodec = buildCodec(conf);
+            }
+          }
+        }
+        return cssZlibCodec;
+      }
+
+      private CompressionCodec buildCodec(Configuration conf) {
+        try {
+          Class<?> externalCodec =
+              getClassLoaderForCodec().loadClass("org.apache.hadoop.io.compress.CSSZlibCodec");
+          return (CompressionCodec) ReflectionUtils.newInstance(externalCodec, conf);
+        } catch (ClassNotFoundException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    };
+
+    private final transient Configuration conf; // FindBugs: SE_BAD_FIELD so just made it transient
     private final String compressName;
     /** data input buffer size to absorb small reads from application. */
     private static final int DATA_IBUF_SIZE = 1 * 1024;
